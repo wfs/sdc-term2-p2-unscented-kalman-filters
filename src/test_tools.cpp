@@ -1,6 +1,8 @@
 // Comment / Uncomment lines in CMakeLists.txt that refer to *.cpp with main() functions
 // then Uncomment next line
-#define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file.
+//
+//#define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file.
+//
 //                          Once you have more than one file with unit tests in you'll just #include "catch.hpp" and go.
 //                          https://github.com/philsquared/Catch/blob/master/docs/tutorial.md
 #include "catch.hpp"

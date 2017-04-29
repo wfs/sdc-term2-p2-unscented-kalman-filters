@@ -4,6 +4,7 @@
 #include <sstream>
 #include <vector>
 #include <stdlib.h>
+#include <string>
 #include "Eigen/Dense"
 #include "ukf.h"
 #include "ground_truth_package.h"
@@ -221,7 +222,16 @@ int main(int argc, char *argv[]) {
 
     // compute the accuracy (RMSE)
     Tools tools;
-    cout << "RMSE" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
+    //cout << "RMSE" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
+
+    VectorXd rmse_calc;
+    rmse_calc = tools.CalculateRMSE(estimations, ground_truth);
+
+    cout << "RMSE" << endl;
+    for (int i = 0; i < 4; ++i) {
+        string s = to_string(rmse_calc[i]);
+        cout << s.substr(0, 4) << endl;
+    }
 
     // close files
     if (out_file_.is_open()) {
@@ -232,6 +242,6 @@ int main(int argc, char *argv[]) {
         in_file_.close();
     }
 
-    cout << "Done!" << endl;
+    //cout << "Done!" << endl;
     return 0;
 }
