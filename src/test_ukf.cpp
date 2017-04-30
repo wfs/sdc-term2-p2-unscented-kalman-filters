@@ -1,12 +1,15 @@
 // Comment / Uncomment lines in CMakeLists.txt that refer to *.cpp with main() functions
 // then Uncomment next line
+
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file.
+
 //                          Once you have more than one file with unit tests in you'll just #include "catch.hpp" and go.
 //                          https://github.com/philsquared/Catch/blob/master/docs/tutorial.md
 #include "catch.hpp"
 
 #include "Eigen/Dense"
-#include "ukf.hpp"
+#include "ukf.h"
+#include "ground_truth_package.h"
 
 using namespace std;
 using Eigen::MatrixXd;
@@ -14,170 +17,213 @@ using Eigen::VectorXd;
 using std::vector;
 
 /**
- * UKF test of generating sigma points.
+ * Term 2 Project 2 UKF test RMSE of Estimation VS Ground Truth meets rubic.
  */
 
-SCENARIO("UKF test of generating sigma points.",
-         "[ukf_gen_sigma_pts]") {
+SCENARIO("Term 2 Project 2 UKF test RMSE of Estimation VS Ground Truth meets rubic.",
+         "[ukf_rubic]") {
 
-    GIVEN("an empty 5 row x 11 col matrix exists") {
-        //Create a UKF instance
-        UKF ukf;
+    GIVEN("input and output files of Lidar and Radar measurements exist") {
+        string in_file_name_ = "../data/obj_pose-laser-radar-synthetic-input.txt";
+        ifstream in_file_(in_file_name_.c_str(), ifstream::in);
 
-        MatrixXd Xsig = MatrixXd(11, 5);
-        REQUIRE(Xsig.size() == 55);
+        string out_file_name_ = "../data/obj_pose-laser-radar-synthetic-output.txt";
+        ofstream out_file_(out_file_name_.c_str(), ofstream::out);
 
-        WHEN("GenerateSigmaPoints is called") {
-            ukf.GenerateSigmaPoints(&Xsig);
+        REQUIRE(in_file_.is_open() == true);
+        REQUIRE(out_file_.is_open() == true);
 
-            THEN("the results are correct") {
-                //print result
-                //cout << "Xsig(0,0) = " << Xsig(0,0) << endl;
+        WHEN("the UKF pipeline runs") {
+            //REQUIRE(true);
 
-                REQUIRE(Xsig(0,0) == 5.7441);
+            /**********************************************
+             *  Set Measurements                          *
+             **********************************************/
+
+            vector<MeasurementPackage> measurement_pack_list;
+            vector<GroundTruthPackage> gt_pack_list;
+
+            string line;
+
+            // prep the measurement packages (each line represents a measurement at a
+            // timestamp)
+            while (getline(in_file_, line)) {
+                string sensor_type;
+                MeasurementPackage meas_package;
+                GroundTruthPackage gt_package;
+                istringstream iss(line);
+                long long timestamp;
+
+                // reads first element from the current line
+                iss >> sensor_type;
+
+                if (sensor_type.compare("L") == 0) {
+                    // laser measurement
+
+                    // read measurements at this timestamp
+                    meas_package.sensor_type_ = MeasurementPackage::LASER;
+                    meas_package.raw_measurements_ = VectorXd(2);
+                    float px;
+                    float py;
+                    iss >> px;
+                    iss >> py;
+                    meas_package.raw_measurements_ << px, py;
+                    iss >> timestamp;
+                    meas_package.timestamp_ = timestamp;
+                    measurement_pack_list.push_back(meas_package);
+                } else if (sensor_type.compare("R") == 0) {
+                    // radar measurement
+
+                    // read measurements at this timestamp
+                    meas_package.sensor_type_ = MeasurementPackage::RADAR;
+                    meas_package.raw_measurements_ = VectorXd(3);
+                    float ro;
+                    float phi;
+                    float ro_dot;
+                    iss >> ro;
+                    iss >> phi;
+                    iss >> ro_dot;
+                    meas_package.raw_measurements_ << ro, phi, ro_dot;
+                    iss >> timestamp;
+                    meas_package.timestamp_ = timestamp;
+                    measurement_pack_list.push_back(meas_package);
+                }
+
+                // read ground truth data to compare later
+                float x_gt;
+                float y_gt;
+                float vx_gt;
+                float vy_gt;
+                iss >> x_gt;
+                iss >> y_gt;
+                iss >> vx_gt;
+                iss >> vy_gt;
+                gt_package.gt_values_ = VectorXd(4);
+                gt_package.gt_values_ << x_gt, y_gt, vx_gt, vy_gt;
+                gt_pack_list.push_back(gt_package);
             }
-        }
-    }
-}
 
-/**
- * UKF test of augmented sigma points.
- */
+            // Create a UKF instance
+            UKF ukf;
 
-SCENARIO("UKF test of augmented sigma points.",
-         "[ukf_aug_sigma_pts]") {
+            // used to compute the RMSE later
+            vector<VectorXd> estimations;
+            vector<VectorXd> ground_truth;
 
-    GIVEN("an empty 7 row x 15 col matrix exists") {
-        //Create a UKF instance
-        UKF ukf;
+            // start filtering from the second frame (the speed is unknown in the first
+            // frame)
 
-        MatrixXd Xsig_aug = MatrixXd(15, 7);
-        REQUIRE(Xsig_aug.size() == 105);
+            size_t number_of_measurements = measurement_pack_list.size();
 
-        WHEN("AugmentedSigmaPoints is called") {
-            ukf.AugmentedSigmaPoints(&Xsig_aug);
+            // column names for output file
+            out_file_ << "time_stamp" << "\t";
+            out_file_ << "px_state" << "\t";
+            out_file_ << "py_state" << "\t";
+            out_file_ << "v_state" << "\t";
+            out_file_ << "yaw_angle_state" << "\t";
+            out_file_ << "yaw_rate_state" << "\t";
+            out_file_ << "sensor_type" << "\t";
+            out_file_ << "NIS" << "\t";
+            out_file_ << "px_measured" << "\t";
+            out_file_ << "py_measured" << "\t";
+            out_file_ << "px_ground_truth" << "\t";
+            out_file_ << "py_ground_truth" << "\t";
+            out_file_ << "vx_ground_truth" << "\t";
+            out_file_ << "vy_ground_truth" << "\n";
 
-            THEN("the results are correct") {
-                //REQUIRE(Xsig_aug(0,0) == 5.7441);  passes
-                string s = to_string(Xsig_aug(6,14));  // "-0.346410"
-                REQUIRE(s == "-0.346410");
+
+            for (size_t k = 0; k < number_of_measurements; ++k) {
+                // Call the UKF-based fusion
+                ukf.ProcessMeasurement(measurement_pack_list[k]);
+
+                // timestamp
+                out_file_ << measurement_pack_list[k].timestamp_ << "\t"; // pos1 - est
+
+                // output the state vector
+                out_file_ << ukf.x_(0) << "\t"; // pos1 - est
+                out_file_ << ukf.x_(1) << "\t"; // pos2 - est
+                out_file_ << ukf.x_(2) << "\t"; // vel_abs -est
+                out_file_ << ukf.x_(3) << "\t"; // yaw_angle -est
+                out_file_ << ukf.x_(4) << "\t"; // yaw_rate -est
+
+                // output lidar and radar specific data
+                if (measurement_pack_list[k].sensor_type_ == MeasurementPackage::LASER) {
+                    // sensor type
+                    out_file_ << "lidar" << "\t";
+
+                    // NIS value
+                    out_file_ << ukf.NIS_laser_ << "\t";
+
+                    // output the lidar sensor measurement px and py
+                    out_file_ << measurement_pack_list[k].raw_measurements_(0) << "\t";
+                    out_file_ << measurement_pack_list[k].raw_measurements_(1) << "\t";
+
+                } else if (measurement_pack_list[k].sensor_type_ == MeasurementPackage::RADAR) {
+                    // sensor type
+                    out_file_ << "radar" << "\t";
+
+                    // NIS value
+                    out_file_ << ukf.NIS_radar_ << "\t";
+
+                    // output radar measurement in cartesian coordinates
+                    float ro = measurement_pack_list[k].raw_measurements_(0);
+                    float phi = measurement_pack_list[k].raw_measurements_(1);
+                    out_file_ << ro * cos(phi) << "\t"; // px measurement
+                    out_file_ << ro * sin(phi) << "\t"; // py measurement
+                }
+
+                // output the ground truth
+                out_file_ << gt_pack_list[k].gt_values_(0) << "\t";
+                out_file_ << gt_pack_list[k].gt_values_(1) << "\t";
+                out_file_ << gt_pack_list[k].gt_values_(2) << "\t";
+                out_file_ << gt_pack_list[k].gt_values_(3) << "\n";
+
+                // convert ukf x vector to cartesian to compare to ground truth
+                VectorXd ukf_x_cartesian_ = VectorXd(4);
+
+                float x_estimate_ = ukf.x_(0);
+                float y_estimate_ = ukf.x_(1);
+                float vx_estimate_ = ukf.x_(2) * cos(ukf.x_(3));
+                float vy_estimate_ = ukf.x_(2) * sin(ukf.x_(3));
+
+                ukf_x_cartesian_ << x_estimate_, y_estimate_, vx_estimate_, vy_estimate_;
+
+                estimations.push_back(ukf_x_cartesian_);
+                ground_truth.push_back(gt_pack_list[k].gt_values_);
+
             }
-        }
-    }
-}
 
-/**
- * UKF test of augmented sigma points.
- */
+            THEN("RMSE is <= project rubic") {
+                //REQUIRE(true);
+                // compute the accuracy (RMSE)
+                Tools tools;
+                //cout << "RMSE" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
 
-SCENARIO("UKF test of sigma point prediction.",
-         "[ukf_sigma_pt_prediction]") {
+                VectorXd rmse_calc;
+                rmse_calc = tools.CalculateRMSE(estimations, ground_truth);
 
-    GIVEN("an empty 5 row x 15 col matrix exists") {
-        //Create a UKF instance
-        UKF ukf;
+                REQUIRE(rmse_calc[0] <= 0.09);  // px
+                REQUIRE(rmse_calc[1] <= 0.10);  // py
+                REQUIRE(rmse_calc[2] <= 0.40);  // vx
+                REQUIRE(rmse_calc[3] <= 0.30);  // vy
 
-        MatrixXd Xsig_pred = MatrixXd(15, 5);  // aka 5 row x 15 col
-        REQUIRE(Xsig_pred.size() == 75);
+                //cout << "RMSE" << endl;
+                //for (int i = 0; i < 4; ++i) {
+                //    string s = to_string(rmse_calc[i]);
+                //    cout << s.substr(0, 4) << endl;
+                //}
 
+                // close files
+                if (out_file_.is_open()) {
+                    out_file_.close();
+                }
 
-        WHEN("SigmaPointPrediction is called") {
-            ukf.SigmaPointPrediction(&Xsig_pred);
+                if (in_file_.is_open()) {
+                    in_file_.close();
+                }
 
-            THEN("the results are correct") {
-                string s = to_string(Xsig_pred(4,14));  // "0.318159"
-                REQUIRE(s == "0.318159");
-            }
-        }
-    }
-}
-
-/**
- * UKF test of augmented sigma points.
- */
-
-SCENARIO("UKF test calc state mean and covariance of predicted sigma.",
-         "[ukf_mean_and_covariance]") {
-
-    GIVEN("an empty 5 row x 15 col matrix exists") {
-        //Create a UKF instance
-        UKF ukf;
-
-        VectorXd x_pred = VectorXd(5);
-        MatrixXd P_pred = MatrixXd(5, 5);  // constructor uses 5 col x 5 row params, math notation uses 5 row x 5 col
-        REQUIRE(x_pred.size() == 5);
-        REQUIRE(P_pred.size() == 25);
-
-
-        WHEN("PredictMeanAndCovariance is called") {
-            ukf.PredictMeanAndCovariance(&x_pred, &P_pred);
-
-            THEN("the results are correct") {
-                string xs = to_string(x_pred(0));  // "5.936373"
-                REQUIRE(xs == "5.936373");
-                string ps = to_string(P_pred(0,0));  // "0.005434"
-                REQUIRE(ps == "0.005434");
-            }
-        }
-    }
-}
-
-/**
- * UKF test of measurement prediction including sensor noise.
- */
-
-SCENARIO("UKF test of measurement prediction including sensor noise.",
-         "[ukf_measurement_prediction_incl_sensor_noise]") {
-
-    GIVEN("an empty 3 row Vector 'z_out' and 3 col x 3 row matrix 'S_out' exists") {
-        //Create a UKF instance
-        UKF ukf;
-
-        VectorXd z_out = VectorXd(3);
-        MatrixXd S_out = MatrixXd(3, 3);
-
-        REQUIRE(z_out.size() == 3);
-        REQUIRE(S_out.size() == 9);
-
-
-        WHEN("PredictRadarMeasurement is called") {
-            ukf.PredictRadarMeasurement(&z_out, &S_out);
-
-            THEN("the results are correct") {
-                string zs = to_string(z_out(0));  // "6.121547"
-                REQUIRE(zs == "6.121547");
-                string ss = to_string(S_out(2,2));  // "0.018092"
-                REQUIRE(ss == "0.018092");
-            }
-        }
-    }
-}
-
-/**
- * UKF test of updating state, the final step in pipeline.
- */
-
-SCENARIO("UKF test of updating state, the final step in pipeline.",
-         "[ukf_update_state]") {
-
-    GIVEN("an empty 5 row Vector 'x_out' and 5 col x 5 row matrix 'P_out' exists") {
-        //Create a UKF instance
-        UKF ukf;
-
-        VectorXd x_out = VectorXd(5);
-        MatrixXd P_out = MatrixXd(5, 5);
-
-        REQUIRE(x_out.size() == 5);
-        REQUIRE(P_out.size() == 25);
-
-        WHEN("UpdateState is called") {
-            ukf.UpdateState(&x_out, &P_out);
-
-            THEN("the results are correct") {
-                string xs = to_string(x_out(0));  // "5.922762"
-                REQUIRE(xs == "5.922762");
-                string ps = to_string(P_out(4,4));  // "0.008818"
-                REQUIRE(ps == "0.008818");
+                //cout << "Done!" << endl;
+                //return 0;
             }
         }
     }

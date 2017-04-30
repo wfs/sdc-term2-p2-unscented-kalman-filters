@@ -7,7 +7,7 @@ add_definitions(-std=c++0x)
 
 # BDD-Style Tests
 #set(sources src/test_tools.cpp)
-#set(sources src/test_ukf.cpp)
+#set(sources src/test_ukf.cpp src/ukf.cpp src/tools.cpp)
 
 # SDC Term 2 Project 2 - Unscented Kalman Filters
 set(sources src/main.cpp src/ukf.cpp src/tools.cpp)
